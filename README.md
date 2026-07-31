@@ -82,6 +82,7 @@ CategorySeeder（小分類）
 ```bash
 ./vendor/bin/sail artisan migrate
 ./vendor/bin/sail artisan db:seed
+./vendor/bin/sail artisan db:seed --class=DashboardDummyDataSeeder
 ```
 
 上手くいかなかった場合  
@@ -148,6 +149,18 @@ API側の全テストを実行：
 ./vendor/bin/sail artisan test tests/Feature/StatsApiTest.php
 ```
 
+予算アラート設定APIのテストケースだけを実行：
+
+```bash
+./vendor/bin/sail artisan test tests/Feature/BudgetAlertSettingApiTest.php
+```
+
+予算アラート判定・既読APIのテストケースだけを実行：
+
+```bash
+./vendor/bin/sail artisan test tests/Feature/BudgetAlertStatusApiTest.php
+```
+
 ## 📦 動作環境
 
 - Laravel Framework **13.5.0**
@@ -164,4 +177,4 @@ API側の全テストを実行：
 
 ## ER図
 
-![alt text](docs/er-diagram-business.png)
+現在のマイグレーションを基準にしたMermaid形式のER図は、[docs/er-diagram.md](docs/er-diagram.md)を参照してください。

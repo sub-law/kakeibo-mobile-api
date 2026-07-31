@@ -9,6 +9,9 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\AccountController;
 use App\Http\Controllers\AssetBalanceController;
+use App\Http\Controllers\BudgetAlertReadController;
+use App\Http\Controllers\BudgetAlertSettingController;
+use App\Http\Controllers\BudgetAlertStatusController;
 use App\Http\Controllers\StatsController;
 
 
@@ -56,4 +59,15 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // 管理画面向け年次集計
     Route::get('/stats/{year}/monthly-summary', [StatsController::class, 'monthlySummary']);
+
+    // 予算アラート設定
+    Route::get('/budget-alert-settings', [BudgetAlertSettingController::class, 'index']);
+    Route::post('/budget-alert-settings', [BudgetAlertSettingController::class, 'store']);
+    Route::get('/budget-alert-settings/{id}', [BudgetAlertSettingController::class, 'show']);
+    Route::put('/budget-alert-settings/{id}', [BudgetAlertSettingController::class, 'update']);
+    Route::delete('/budget-alert-settings/{id}', [BudgetAlertSettingController::class, 'destroy']);
+    Route::post('/budget-alert-settings/{id}/read', [BudgetAlertReadController::class, 'store']);
+
+    // トップ画面向け予算アラート判定
+    Route::get('/budget-alert-status', [BudgetAlertStatusController::class, 'show']);
 });
