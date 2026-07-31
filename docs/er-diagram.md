@@ -9,9 +9,12 @@ erDiagram
     USERS ||--o{ INCOMES : "収入を登録する"
     USERS ||--o{ EXPENSES : "支出を登録する"
     USERS ||--o{ ASSET_BALANCES : "資産残高を登録する"
+    USERS ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートを設定する"
     CATEGORY_GROUPS ||--o{ CATEGORIES : "カテゴリをまとめる"
     CATEGORIES ||--o{ EXPENSES : "支出に分類される"
+    CATEGORIES ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートの対象になる"
     ACCOUNTS ||--o{ ASSET_BALANCES : "口座別に残高を持つ"
+    BUDGET_ALERT_SETTINGS ||--o{ BUDGET_ALERT_READS : "通知の既読状態を持つ"
 
     USERS {
         bigint id PK
@@ -77,12 +80,35 @@ erDiagram
         timestamp created_at
         timestamp updated_at
     }
+
+    BUDGET_ALERT_SETTINGS {
+        bigint id PK
+        bigint user_id FK "複合UK構成列"
+        bigint category_id FK "複合UK構成列"
+        integer monthly_budget "UNSIGNED"
+        tinyint warning_threshold_percent "UNSIGNED・DEFAULT 70"
+        boolean is_enabled "DEFAULT true"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    BUDGET_ALERT_READS {
+        bigint id PK
+        bigint budget_alert_setting_id FK "複合UK構成列"
+        smallint year "UNSIGNED・複合UK構成列"
+        tinyint month "UNSIGNED・複合UK構成列"
+        varchar level "VARCHAR(20)・複合UK構成列"
+        timestamp read_at
+    }
 ```
 
 ### 制約
 
-- `incomes.user_id`、`expenses.user_id`、`expenses.category_id`、`categories.category_group_id`、`asset_balances.user_id`、`asset_balances.account_id` は、参照先の削除時に連動して削除されます。
+- `incomes.user_id`、`expenses.user_id`、`expenses.category_id`、`categories.category_group_id`、`asset_balances.user_id`、`asset_balances.account_id`、`budget_alert_settings.user_id`、`budget_alert_settings.category_id`、`budget_alert_reads.budget_alert_setting_id` は、参照先の削除時に連動して削除されます。
 - `asset_balances` は、`user_id`、`account_id`、`date` の組み合わせで一意です。
+- `budget_alert_settings` は、`user_id`、`category_id` の組み合わせで一意です。
+- `budget_alert_reads` は、`budget_alert_setting_id`、`year`、`month`、`level` の組み合わせで一意です。
+- `budget_alert_settings.warning_threshold_percent` のデフォルト値は70で、APIでは1〜99の範囲に制限しています。
 - `accounts.type` の値は、マイグレーションのコメント上では `bank`、`securities`、`cash` を想定しています。DB上の列型は文字列で、値を限定する制約はありません。
 
 ## Laravelフレームワーク管理テーブル

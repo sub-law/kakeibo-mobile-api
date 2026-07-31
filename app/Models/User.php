@@ -39,4 +39,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(AssetBalance::class);
     }
+
+    public function budgetAlertSettings()
+    {
+        return $this->hasMany(BudgetAlertSetting::class);
+    }
 }
