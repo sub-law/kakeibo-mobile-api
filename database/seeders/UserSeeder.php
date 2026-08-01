@@ -12,7 +12,7 @@ class UserSeeder extends Seeder
         User::firstOrCreate(
             ['email' => env('DEFAULT_USER_EMAIL')],
             [
-                'name' => 'Sabusan',
+                'name' => 'kakeibotaro',
                 'password' => bcrypt(env('DEFAULT_USER_PASSWORD')),
             ]
         );
