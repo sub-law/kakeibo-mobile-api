@@ -12,6 +12,8 @@ use App\Http\Controllers\AssetBalanceController;
 use App\Http\Controllers\BudgetAlertReadController;
 use App\Http\Controllers\BudgetAlertSettingController;
 use App\Http\Controllers\BudgetAlertStatusController;
+use App\Http\Controllers\FixedExpenseController;
+use App\Http\Controllers\FixedExpenseProcessController;
 use App\Http\Controllers\StatsController;
 
 
@@ -70,4 +72,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // トップ画面向け予算アラート判定
     Route::get('/budget-alert-status', [BudgetAlertStatusController::class, 'show']);
+
+    // 固定費設定・月次出金処理
+    Route::get('/fixed-expenses/process-preview', [FixedExpenseProcessController::class, 'preview']);
+    Route::post('/fixed-expenses/process', [FixedExpenseProcessController::class, 'store']);
+    Route::get('/fixed-expenses', [FixedExpenseController::class, 'index']);
+    Route::post('/fixed-expenses', [FixedExpenseController::class, 'store']);
+    Route::get('/fixed-expenses/{id}', [FixedExpenseController::class, 'show']);
+    Route::put('/fixed-expenses/{id}', [FixedExpenseController::class, 'update']);
 });

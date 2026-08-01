@@ -161,6 +161,18 @@ API側の全テストを実行：
 ./vendor/bin/sail artisan test tests/Feature/BudgetAlertStatusApiTest.php
 ```
 
+固定費設定APIのテストケースだけを実行：
+
+```bash
+./vendor/bin/sail artisan test tests/Feature/FixedExpenseApiTest.php
+```
+
+固定費一括出金処理のテストケースだけを実行：
+
+```bash
+./vendor/bin/sail artisan test tests/Feature/ProcessFixedExpensesTest.php
+```
+
 ## 📦 動作環境
 
 - Laravel Framework **13.5.0**
