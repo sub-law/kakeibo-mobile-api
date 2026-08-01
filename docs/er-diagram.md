@@ -10,11 +10,15 @@ erDiagram
     USERS ||--o{ EXPENSES : "支出を登録する"
     USERS ||--o{ ASSET_BALANCES : "資産残高を登録する"
     USERS ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートを設定する"
+    USERS ||--o{ FIXED_EXPENSES : "固定費を登録する"
     CATEGORY_GROUPS ||--o{ CATEGORIES : "カテゴリをまとめる"
     CATEGORIES ||--o{ EXPENSES : "支出に分類される"
     CATEGORIES ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートの対象になる"
+    CATEGORIES ||--o{ FIXED_EXPENSES : "固定費に分類される"
     ACCOUNTS ||--o{ ASSET_BALANCES : "口座別に残高を持つ"
-    BUDGET_ALERT_SETTINGS ||--o{ BUDGET_ALERT_READS : "通知の既読状態を持つ"
+    BUDGET_ALERT_SETTINGS ||--o{ BUDGET_ALERT_READS : "既読状態を持つ"
+    FIXED_EXPENSES ||--o{ FIXED_EXPENSE_PROCESSES : "月ごとの出金履歴を持つ"
+    EXPENSES o|--o| FIXED_EXPENSE_PROCESSES : "固定費から生成される"
 
     USERS {
         bigint id PK
@@ -85,9 +89,9 @@ erDiagram
         bigint id PK
         bigint user_id FK "複合UK構成列"
         bigint category_id FK "複合UK構成列"
-        integer monthly_budget "UNSIGNED"
-        tinyint warning_threshold_percent "UNSIGNED・DEFAULT 70"
-        boolean is_enabled "DEFAULT true"
+        unsigned_integer monthly_budget
+        unsigned_tinyint warning_threshold_percent "デフォルト70"
+        boolean is_enabled "デフォルトtrue"
         timestamp created_at
         timestamp updated_at
     }
@@ -95,20 +99,41 @@ erDiagram
     BUDGET_ALERT_READS {
         bigint id PK
         bigint budget_alert_setting_id FK "複合UK構成列"
-        smallint year "UNSIGNED・複合UK構成列"
-        tinyint month "UNSIGNED・複合UK構成列"
-        varchar level "VARCHAR(20)・複合UK構成列"
+        unsigned_smallint year "複合UK構成列"
+        unsigned_tinyint month "複合UK構成列"
+        varchar level "複合UK構成列"
         timestamp read_at
+    }
+
+    FIXED_EXPENSES {
+        bigint id PK
+        bigint user_id FK
+        bigint category_id FK
+        unsigned_integer amount
+        varchar memo "NOT NULL"
+        boolean is_enabled "デフォルトtrue"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    FIXED_EXPENSE_PROCESSES {
+        bigint id PK
+        bigint fixed_expense_id FK "複合UK構成列"
+        bigint expense_id FK "NULL可・UK"
+        date target_month "複合UK構成列"
+        timestamp created_at
+        timestamp updated_at
     }
 ```
 
 ### 制約
 
-- `incomes.user_id`、`expenses.user_id`、`expenses.category_id`、`categories.category_group_id`、`asset_balances.user_id`、`asset_balances.account_id`、`budget_alert_settings.user_id`、`budget_alert_settings.category_id`、`budget_alert_reads.budget_alert_setting_id` は、参照先の削除時に連動して削除されます。
+- `incomes.user_id`、`expenses.user_id`、`expenses.category_id`、`categories.category_group_id`、`asset_balances.user_id`、`asset_balances.account_id`、`budget_alert_settings.user_id`、`budget_alert_settings.category_id`、`budget_alert_reads.budget_alert_setting_id`、`fixed_expenses.user_id`、`fixed_expenses.category_id`、`fixed_expense_processes.fixed_expense_id` は、参照先の削除時に連動して削除されます。
 - `asset_balances` は、`user_id`、`account_id`、`date` の組み合わせで一意です。
 - `budget_alert_settings` は、`user_id`、`category_id` の組み合わせで一意です。
 - `budget_alert_reads` は、`budget_alert_setting_id`、`year`、`month`、`level` の組み合わせで一意です。
-- `budget_alert_settings.warning_threshold_percent` のデフォルト値は70で、APIでは1〜99の範囲に制限しています。
+- `fixed_expense_processes` は、`fixed_expense_id`、`target_month` の組み合わせで一意です。また、`expense_id` も一意です。
+- `fixed_expense_processes.expense_id` はNULLを許可し、参照する出金が削除された場合はNULLになります。これにより、出金削除後も固定費の処理済み履歴が残ります。
 - `accounts.type` の値は、マイグレーションのコメント上では `bank`、`securities`、`cash` を想定しています。DB上の列型は文字列で、値を限定する制約はありません。
 
 ## Laravelフレームワーク管理テーブル

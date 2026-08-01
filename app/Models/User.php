@@ -44,4 +44,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(BudgetAlertSetting::class);
     }
+
+    public function fixedExpenses()
+    {
+        return $this->hasMany(FixedExpense::class);
+    }
 }
