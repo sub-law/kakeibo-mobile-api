@@ -18,40 +18,32 @@ class ProcessFixedExpensesTest extends TestCase
     protected function tearDown(): void
     {
         Carbon::setTestNow();
+
         parent::tearDown();
     }
 
-    public function test_unauthenticated_user_cannot_preview_or_process_fixed_expenses(): void
+    public function test_preview_lists_only_unprocessed_enabled_fixed_expenses(): void
     {
-        $this->getJson('/api/fixed-expenses/process-preview?target_month=2026-08')
-            ->assertUnauthorized();
-
-        $this->postJson('/api/fixed-expenses/process', [
-            'target_month' => '2026-08',
-        ])->assertUnauthorized();
-    }
-
-    public function test_preview_contains_only_current_users_enabled_unprocessed_fixed_expenses(): void
-    {
-        Carbon::setTestNow('2026-08-15 12:00:00');
+        Carbon::setTestNow('2026-08-15 10:00:00');
         $user = User::factory()->create();
-        $otherUser = User::factory()->create();
         $category = Category::factory()->create();
-        $target = FixedExpense::factory()
-            ->for($user)
-            ->for($category)
-            ->create(['amount' => 5000]);
-        FixedExpense::factory()->disabled()->for($user)->create();
-        FixedExpense::factory()->for($otherUser)->create();
-        $processed = FixedExpense::factory()->for($user)->create();
+        $processed = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 12000,
+            'memo' => '生命保険料',
+        ]);
+        $unprocessed = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 980,
+            'memo' => '動画配信サービス',
+        ]);
+        FixedExpense::factory()->for($user)->for($category)->disabled()->create([
+            'amount' => 500,
+            'memo' => '無効な固定費',
+        ]);
+        $expense = Expense::factory()->for($user)->for($category)->create();
         FixedExpenseProcess::create([
-            'user_id' => $user->id,
             'fixed_expense_id' => $processed->id,
-            'expense_id' => null,
+            'expense_id' => $expense->id,
             'target_month' => '2026-08-01',
-            'category_id' => $processed->category_id,
-            'amount' => $processed->amount,
-            'memo' => $processed->memo,
         ]);
 
         $this->actingAs($user, 'sanctum')
@@ -60,142 +52,198 @@ class ProcessFixedExpensesTest extends TestCase
             ->assertJsonPath('target_month', '2026-08')
             ->assertJsonPath('expense_date', '2026-08-01')
             ->assertJsonPath('count', 1)
-            ->assertJsonPath('total_amount', 5000)
-            ->assertJsonPath('fixed_expenses.0.id', $target->id);
+            ->assertJsonPath('total_amount', 980)
+            ->assertJsonPath('fixed_expenses.0.id', $unprocessed->id)
+            ->assertJsonPath('fixed_expenses.0.category.id', $category->id);
     }
 
-    public function test_processing_creates_expenses_on_the_first_day_and_process_histories(): void
+    public function test_approval_creates_month_start_expenses_with_current_values(): void
     {
-        Carbon::setTestNow('2026-08-20 12:00:00');
+        Carbon::setTestNow('2026-08-15 10:00:00');
         $user = User::factory()->create();
+        $otherUser = User::factory()->create();
         $category = Category::factory()->create();
-        FixedExpense::factory()->for($user)->for($category)->create([
+        $first = FixedExpense::factory()->for($user)->for($category)->create([
             'amount' => 12000,
             'memo' => '生命保険料',
         ]);
-        FixedExpense::factory()->for($user)->for($category)->create([
-            'amount' => 1800,
-            'memo' => '継続課金',
+        $second = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 980,
+            'memo' => '動画配信サービス',
+        ]);
+        FixedExpense::factory()->for($user)->for($category)->disabled()->create([
+            'amount' => 500,
+            'memo' => '無効な固定費',
+        ]);
+        FixedExpense::factory()->for($otherUser)->for($category)->create([
+            'amount' => 3000,
+            'memo' => '他ユーザーの固定費',
         ]);
 
         $this->actingAs($user, 'sanctum')
             ->postJson('/api/fixed-expenses/process', [
                 'target_month' => '2026-08',
             ])
-            ->assertCreated()
+            ->assertOk()
+            ->assertJsonPath('message', '固定費の出金処理が完了しました。')
             ->assertJsonPath('expense_date', '2026-08-01')
-            ->assertJsonPath('processed_count', 2)
-            ->assertJsonPath('total_amount', 13800)
-            ->assertJsonCount(2, 'expenses');
+            ->assertJsonPath('created_count', 2)
+            ->assertJsonPath('skipped_count', 0)
+            ->assertJsonPath('total_amount', 12980);
 
         $this->assertDatabaseHas('expenses', [
             'user_id' => $user->id,
+            'category_id' => $category->id,
             'date' => '2026-08-01',
             'amount' => 12000,
             'memo' => '生命保険料',
-            'category_id' => $category->id,
         ]);
-        $this->assertDatabaseCount('fixed_expense_processes', 2);
+        $this->assertDatabaseHas('expenses', [
+            'user_id' => $user->id,
+            'date' => '2026-08-01',
+            'amount' => 980,
+            'memo' => '動画配信サービス',
+        ]);
+        $this->assertDatabaseHas('fixed_expense_processes', [
+            'fixed_expense_id' => $first->id,
+            'target_month' => '2026-08-01',
+        ]);
+        $this->assertDatabaseHas('fixed_expense_processes', [
+            'fixed_expense_id' => $second->id,
+            'target_month' => '2026-08-01',
+        ]);
+        $this->assertDatabaseCount('expenses', 2);
     }
 
-    public function test_later_fixed_expense_changes_do_not_change_processed_snapshots(): void
+    public function test_reprocessing_creates_only_fixed_expenses_added_after_first_process(): void
     {
-        Carbon::setTestNow('2026-08-15 12:00:00');
+        Carbon::setTestNow('2026-08-15 10:00:00');
         $user = User::factory()->create();
-        $fixedExpense = FixedExpense::factory()->for($user)->create([
-            'amount' => 3000,
-            'memo' => '処理時の用途',
+        $category = Category::factory()->create();
+        FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 12000,
+            'memo' => '生命保険料',
         ]);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses/process', [
-                'target_month' => '2026-08',
-            ])
-            ->assertCreated();
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertJsonPath('created_count', 1);
+
+        FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 980,
+            'memo' => '動画配信サービス',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertOk()
+            ->assertJsonPath('created_count', 1)
+            ->assertJsonPath('skipped_count', 1)
+            ->assertJsonPath('total_amount', 980);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertOk()
+            ->assertJsonPath('message', '未処理の固定費はありません。')
+            ->assertJsonPath('created_count', 0)
+            ->assertJsonPath('skipped_count', 2);
+
+        $this->assertDatabaseCount('expenses', 2);
+        $this->assertDatabaseCount('fixed_expense_processes', 2);
+    }
+
+    public function test_changing_fixed_expense_does_not_change_past_expense(): void
+    {
+        Carbon::setTestNow('2026-08-15 10:00:00');
+        $user = User::factory()->create();
+        $category = Category::factory()->create();
+        $newCategory = Category::factory()->create();
+        $fixedExpense = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 12000,
+            'memo' => '生命保険料',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertOk();
 
         $fixedExpense->update([
-            'amount' => 4500,
-            'memo' => '変更後の用途',
+            'category_id' => $newCategory->id,
+            'amount' => 15000,
+            'memo' => '生命保険料（変更後）',
         ]);
 
         $this->assertDatabaseHas('expenses', [
             'user_id' => $user->id,
-            'amount' => 3000,
-            'memo' => '処理時の用途',
+            'category_id' => $category->id,
+            'amount' => 12000,
+            'memo' => '生命保険料',
         ]);
-        $this->assertDatabaseHas('fixed_expense_processes', [
-            'fixed_expense_id' => $fixedExpense->id,
-            'amount' => 3000,
-            'memo' => '処理時の用途',
+        $this->assertDatabaseMissing('expenses', [
+            'user_id' => $user->id,
+            'amount' => 15000,
         ]);
     }
 
-    public function test_same_fixed_expense_is_not_processed_twice_in_the_same_month(): void
+    public function test_generated_expense_can_be_updated_and_deleted_without_removing_process_history(): void
     {
-        Carbon::setTestNow('2026-08-15 12:00:00');
-        $user = User::factory()->create();
-        FixedExpense::factory()->for($user)->create();
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses/process', [
-                'target_month' => '2026-08',
-            ])
-            ->assertCreated()
-            ->assertJsonPath('processed_count', 1);
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses/process', [
-                'target_month' => '2026-08',
-            ])
-            ->assertCreated()
-            ->assertJsonPath('processed_count', 0);
-
-        $this->assertDatabaseCount('expenses', 1);
-        $this->assertDatabaseCount('fixed_expense_processes', 1);
-    }
-
-    public function test_processed_expense_can_be_updated_and_deleted_without_allowing_reprocessing(): void
-    {
-        Carbon::setTestNow('2026-08-15 12:00:00');
+        Carbon::setTestNow('2026-08-15 10:00:00');
         $user = User::factory()->create();
         $category = Category::factory()->create();
-        FixedExpense::factory()->for($user)->for($category)->create();
+        $newCategory = Category::factory()->create();
+        $fixedExpense = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 12000,
+            'memo' => '生命保険料',
+        ]);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses/process', [
-                'target_month' => '2026-08',
-            ])
-            ->assertCreated();
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertOk();
 
-        $expense = Expense::where('user_id', $user->id)->sole();
+        $process = FixedExpenseProcess::where('fixed_expense_id', $fixedExpense->id)->firstOrFail();
 
         $this->actingAs($user, 'sanctum')
-            ->putJson("/api/expenses/{$expense->id}", [
-                'date' => '2026-08-10',
-                'amount' => 9999,
-                'memo' => '修正後の用途',
-                'category_id' => $category->id,
+            ->putJson("/api/expenses/{$process->expense_id}", [
+                'date' => '2026-08-02',
+                'amount' => 13000,
+                'memo' => '手動修正',
+                'category_id' => $newCategory->id,
             ])
             ->assertOk();
 
+        $this->assertDatabaseHas('expenses', [
+            'id' => $process->expense_id,
+            'date' => '2026-08-02',
+            'amount' => 13000,
+            'memo' => '手動修正',
+        ]);
+
         $this->actingAs($user, 'sanctum')
-            ->deleteJson("/api/expenses/{$expense->id}")
+            ->deleteJson("/api/expenses/{$process->expense_id}")
             ->assertOk();
 
+        $this->assertDatabaseMissing('expenses', ['id' => $process->expense_id]);
         $this->assertDatabaseHas('fixed_expense_processes', [
-            'user_id' => $user->id,
+            'id' => $process->id,
+            'fixed_expense_id' => $fixedExpense->id,
             'expense_id' => null,
             'target_month' => '2026-08-01',
         ]);
 
         $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses/process', [
-                'target_month' => '2026-08',
-            ])
-            ->assertCreated()
-            ->assertJsonPath('processed_count', 0);
-
-        $this->assertDatabaseCount('expenses', 0);
-        $this->assertDatabaseCount('fixed_expense_processes', 1);
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-08'])
+            ->assertJsonPath('created_count', 0);
     }
+
+    public function test_processing_rejects_a_month_other_than_current_month(): void
+    {
+        Carbon::setTestNow('2026-08-15 10:00:00');
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses/process', ['target_month' => '2026-07'])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.target_month.0', '出金処理できるのは今月分のみです。');
+    }
+
 }

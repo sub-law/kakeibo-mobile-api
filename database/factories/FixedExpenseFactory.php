@@ -27,7 +27,7 @@ class FixedExpenseFactory extends Factory
 
     public function disabled(): static
     {
-        return $this->state(fn (array $attributes): array => [
+        return $this->state(fn (array $attributes) => [
             'is_enabled' => false,
         ]);
     }

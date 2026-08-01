@@ -15,7 +15,7 @@ class StoreFixedExpenseRequest extends FormRequest
     {
         return [
             'category_id' => ['required', 'integer', 'exists:categories,id'],
-            'amount' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'amount' => ['required', 'integer', 'min:1', 'max:4294967295'],
             'memo' => ['required', 'string', 'max:255'],
             'is_enabled' => ['required', 'boolean'],
         ];
@@ -27,10 +27,10 @@ class StoreFixedExpenseRequest extends FormRequest
             'category_id.required' => 'カテゴリは必須です。',
             'category_id.integer' => 'カテゴリの形式が正しくありません。',
             'category_id.exists' => '選択したカテゴリが存在しません。',
-            'amount.required' => '金額は必須です。',
-            'amount.integer' => '金額は整数で入力してください。',
-            'amount.min' => '金額は1円以上で入力してください。',
-            'amount.max' => '金額は2,147,483,647円以下で入力してください。',
+            'amount.required' => '月額料金は必須です。',
+            'amount.integer' => '月額料金は整数で入力してください。',
+            'amount.min' => '月額料金は1円以上で入力してください。',
+            'amount.max' => '月額料金は4,294,967,295円以下で入力してください。',
             'memo.required' => '用途は必須です。',
             'memo.string' => '用途は文字列で入力してください。',
             'memo.max' => '用途は255文字以内で入力してください。',

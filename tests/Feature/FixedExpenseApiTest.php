@@ -19,6 +19,8 @@ class FixedExpenseApiTest extends TestCase
             ['postJson', '/api/fixed-expenses'],
             ['getJson', '/api/fixed-expenses/1'],
             ['putJson', '/api/fixed-expenses/1'],
+            ['getJson', '/api/fixed-expenses/process-preview?target_month=2026-08'],
+            ['postJson', '/api/fixed-expenses/process'],
         ];
 
         foreach ($requests as [$method, $uri]) {
@@ -26,12 +28,13 @@ class FixedExpenseApiTest extends TestCase
         }
     }
 
-    public function test_user_can_create_a_fixed_expense_and_memo_is_required(): void
+    public function test_user_can_create_list_view_and_update_their_fixed_expenses(): void
     {
         $user = User::factory()->create();
         $category = Category::factory()->create();
+        $newCategory = Category::factory()->create();
 
-        $this->actingAs($user, 'sanctum')
+        $response = $this->actingAs($user, 'sanctum')
             ->postJson('/api/fixed-expenses', [
                 'category_id' => $category->id,
                 'amount' => 12000,
@@ -39,82 +42,80 @@ class FixedExpenseApiTest extends TestCase
                 'is_enabled' => true,
             ])
             ->assertCreated()
-            ->assertJsonFragment([
-                'user_id' => $user->id,
-                'category_id' => $category->id,
-                'amount' => 12000,
-                'memo' => '生命保険料',
-                'is_enabled' => true,
-            ]);
+            ->assertJsonPath('user_id', $user->id)
+            ->assertJsonPath('category.id', $category->id)
+            ->assertJsonPath('amount', 12000)
+            ->assertJsonPath('memo', '生命保険料')
+            ->assertJsonPath('is_enabled', true);
 
-        $this->assertDatabaseHas('fixed_expenses', [
-            'user_id' => $user->id,
-            'category_id' => $category->id,
-            'amount' => 12000,
-            'memo' => '生命保険料',
-            'is_enabled' => true,
-        ]);
-
-        $this->actingAs($user, 'sanctum')
-            ->postJson('/api/fixed-expenses', [
-                'category_id' => $category->id,
-                'amount' => 12000,
-                'is_enabled' => true,
-            ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['memo'])
-            ->assertJsonPath('errors.memo.0', '用途は必須です。');
-    }
-
-    public function test_user_can_list_view_and_update_only_their_fixed_expenses(): void
-    {
-        $user = User::factory()->create();
-        $otherUser = User::factory()->create();
-        $category = Category::factory()->create();
-        $newCategory = Category::factory()->create();
-        $fixedExpense = FixedExpense::factory()
-            ->for($user)
-            ->for($category)
-            ->create();
-        FixedExpense::factory()->for($otherUser)->create();
+        $fixedExpenseId = $response->json('id');
 
         $this->actingAs($user, 'sanctum')
             ->getJson('/api/fixed-expenses')
             ->assertOk()
             ->assertJsonCount(1)
-            ->assertJsonPath('0.id', $fixedExpense->id)
-            ->assertJsonPath('0.category.id', $category->id)
-            ->assertJsonPath(
-                '0.category.group.id',
-                $category->category_group_id
-            );
+            ->assertJsonPath('0.id', $fixedExpenseId)
+            ->assertJsonPath('0.category.group.id', $category->category_group_id);
 
         $this->actingAs($user, 'sanctum')
-            ->getJson("/api/fixed-expenses/{$fixedExpense->id}")
+            ->getJson("/api/fixed-expenses/{$fixedExpenseId}")
             ->assertOk()
-            ->assertJsonPath('id', $fixedExpense->id);
+            ->assertJsonPath('memo', '生命保険料');
 
         $this->actingAs($user, 'sanctum')
-            ->putJson("/api/fixed-expenses/{$fixedExpense->id}", [
+            ->putJson("/api/fixed-expenses/{$fixedExpenseId}", [
                 'category_id' => $newCategory->id,
-                'amount' => 9800,
-                'memo' => '動画配信サービス',
+                'amount' => 15000,
+                'memo' => '生命保険料（変更後）',
                 'is_enabled' => false,
             ])
             ->assertOk()
-            ->assertJsonFragment([
-                'category_id' => $newCategory->id,
-                'amount' => 9800,
-                'memo' => '動画配信サービス',
-                'is_enabled' => false,
-            ]);
+            ->assertJsonPath('category.id', $newCategory->id)
+            ->assertJsonPath('amount', 15000)
+            ->assertJsonPath('memo', '生命保険料（変更後）')
+            ->assertJsonPath('is_enabled', false);
     }
 
-    public function test_user_cannot_view_or_update_another_users_fixed_expense(): void
+    public function test_fixed_expense_returns_japanese_validation_errors(): void
     {
         $user = User::factory()->create();
-        $otherFixedExpense = FixedExpense::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses', [])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.category_id.0', 'カテゴリは必須です。')
+            ->assertJsonPath('errors.amount.0', '月額料金は必須です。')
+            ->assertJsonPath('errors.memo.0', '用途は必須です。')
+            ->assertJsonPath('errors.is_enabled.0', '固定費の有効・無効を指定してください。');
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses', [
+                'category_id' => 999999,
+                'amount' => 0,
+                'memo' => '',
+                'is_enabled' => 'invalid',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.category_id.0', '選択したカテゴリが存在しません。')
+            ->assertJsonPath('errors.amount.0', '月額料金は1円以上で入力してください。')
+            ->assertJsonPath('errors.memo.0', '用途は必須です。')
+            ->assertJsonPath('errors.is_enabled.0', '固定費の有効・無効の形式が正しくありません。');
+    }
+
+    public function test_user_cannot_access_another_users_fixed_expense(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
         $category = Category::factory()->create();
+        $otherFixedExpense = FixedExpense::factory()->for($otherUser)->for($category)->create([
+            'amount' => 980,
+            'memo' => '動画配信サービス',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/fixed-expenses')
+            ->assertOk()
+            ->assertJsonCount(0);
 
         $this->actingAs($user, 'sanctum')
             ->getJson("/api/fixed-expenses/{$otherFixedExpense->id}")
@@ -123,15 +124,16 @@ class FixedExpenseApiTest extends TestCase
         $this->actingAs($user, 'sanctum')
             ->putJson("/api/fixed-expenses/{$otherFixedExpense->id}", [
                 'category_id' => $category->id,
-                'amount' => 1000,
+                'amount' => 1980,
                 'memo' => '変更不可',
-                'is_enabled' => true,
+                'is_enabled' => false,
             ])
             ->assertNotFound();
 
-        $this->assertDatabaseMissing('fixed_expenses', [
+        $this->assertDatabaseHas('fixed_expenses', [
             'id' => $otherFixedExpense->id,
-            'memo' => '変更不可',
+            'amount' => 980,
+            'is_enabled' => true,
         ]);
     }
 }

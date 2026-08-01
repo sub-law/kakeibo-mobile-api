@@ -10,22 +10,21 @@ return new class extends Migration
     {
         Schema::create('fixed_expense_processes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('fixed_expense_id')
                 ->constrained()
-                ->cascadeOnDelete();
+                ->onDelete('cascade');
             $table->foreignId('expense_id')
                 ->nullable()
                 ->constrained()
                 ->nullOnDelete();
             $table->date('target_month');
-            $table->foreignId('category_id')->constrained()->restrictOnDelete();
-            $table->unsignedInteger('amount');
-            $table->string('memo');
             $table->timestamps();
 
-            $table->unique(['fixed_expense_id', 'target_month']);
-            $table->index(['user_id', 'target_month']);
+            $table->unique(
+                ['fixed_expense_id', 'target_month'],
+                'fixed_expense_processes_expense_month_unique'
+            );
+            $table->unique('expense_id');
         });
     }
 

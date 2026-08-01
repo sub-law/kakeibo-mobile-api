@@ -2,95 +2,92 @@
 
 namespace App\Services;
 
-use App\Models\Expense;
-use App\Models\FixedExpense;
 use App\Models\User;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class FixedExpenseProcessingService
 {
-    public function preview(User $user, CarbonImmutable $targetMonth): array
+    public function preview(User $user, string $targetMonth): array
     {
-        $fixedExpenses = $this->unprocessedFixedExpenses(
-            $user,
-            $targetMonth
-        )->get();
+        $expenseDate = $this->expenseDate($targetMonth);
 
-        return $this->previewPayload($fixedExpenses, $targetMonth);
+        $fixedExpenses = $user->fixedExpenses()
+            ->where('is_enabled', true)
+            ->whereDoesntHave('processes', function ($query) use ($expenseDate) {
+                $query->whereDate('target_month', $expenseDate);
+            })
+            ->with('category.group')
+            ->orderBy('id')
+            ->get();
+
+        return [
+            'target_month' => $targetMonth,
+            'expense_date' => $expenseDate,
+            'fixed_expenses' => $fixedExpenses,
+            'count' => $fixedExpenses->count(),
+            'total_amount' => $fixedExpenses->sum('amount'),
+        ];
     }
 
-    public function process(User $user, CarbonImmutable $targetMonth): array
+    public function process(User $user, string $targetMonth): array
     {
-        return DB::transaction(function () use ($user, $targetMonth): array {
-            $fixedExpenses = $this->unprocessedFixedExpenses(
-                $user,
-                $targetMonth
-            )
+        $expenseDate = $this->expenseDate($targetMonth);
+
+        return DB::transaction(function () use ($user, $targetMonth, $expenseDate) {
+            $fixedExpenses = $user->fixedExpenses()
+                ->where('is_enabled', true)
+                ->orderBy('id')
                 ->lockForUpdate()
                 ->get();
 
-            $expenses = $fixedExpenses->map(function (
-                FixedExpense $fixedExpense
-            ) use ($user, $targetMonth): Expense {
-                $expense = Expense::create([
-                    'user_id' => $user->id,
-                    'category_id' => $fixedExpense->category_id,
-                    'date' => $targetMonth->startOfMonth()->toDateString(),
+            $createdCount = 0;
+            $skippedCount = 0;
+            $totalAmount = 0;
+
+            foreach ($fixedExpenses as $fixedExpense) {
+                $alreadyProcessed = $fixedExpense->processes()
+                    ->whereDate('target_month', $expenseDate)
+                    ->exists();
+
+                if ($alreadyProcessed) {
+                    $skippedCount++;
+                    continue;
+                }
+
+                $expense = $user->expenses()->create([
+                    'date' => $expenseDate,
                     'amount' => $fixedExpense->amount,
                     'memo' => $fixedExpense->memo,
+                    'category_id' => $fixedExpense->category_id,
                 ]);
 
                 $fixedExpense->processes()->create([
-                    'user_id' => $user->id,
                     'expense_id' => $expense->id,
-                    'target_month' => $targetMonth->startOfMonth()->toDateString(),
-                    'category_id' => $fixedExpense->category_id,
-                    'amount' => $fixedExpense->amount,
-                    'memo' => $fixedExpense->memo,
+                    'target_month' => $expenseDate,
                 ]);
 
-                return $expense->load('category.group');
-            });
+                $createdCount++;
+                $totalAmount += $fixedExpense->amount;
+            }
 
             return [
-                'message' => '固定費の出金処理が完了しました。',
-                'target_month' => $targetMonth->format('Y-m'),
-                'expense_date' => $targetMonth->startOfMonth()->toDateString(),
-                'processed_count' => $expenses->count(),
-                'total_amount' => $expenses->sum('amount'),
-                'expenses' => $expenses->values(),
+                'message' => $createdCount > 0
+                    ? '固定費の出金処理が完了しました。'
+                    : '未処理の固定費はありません。',
+                'target_month' => $targetMonth,
+                'expense_date' => $expenseDate,
+                'created_count' => $createdCount,
+                'skipped_count' => $skippedCount,
+                'total_amount' => $totalAmount,
             ];
         });
     }
 
-    private function unprocessedFixedExpenses(
-        User $user,
-        CarbonImmutable $targetMonth
-    ) {
-        return $user->fixedExpenses()
-            ->where('is_enabled', true)
-            ->whereDoesntHave('processes', function ($query) use ($targetMonth) {
-                $query->whereDate(
-                    'target_month',
-                    $targetMonth->startOfMonth()->toDateString()
-                );
-            })
-            ->with('category.group')
-            ->orderBy('id');
-    }
-
-    private function previewPayload(
-        Collection $fixedExpenses,
-        CarbonImmutable $targetMonth
-    ): array {
-        return [
-            'target_month' => $targetMonth->format('Y-m'),
-            'expense_date' => $targetMonth->startOfMonth()->toDateString(),
-            'count' => $fixedExpenses->count(),
-            'total_amount' => $fixedExpenses->sum('amount'),
-            'fixed_expenses' => $fixedExpenses->values(),
-        ];
+    private function expenseDate(string $targetMonth): string
+    {
+        return CarbonImmutable::createFromFormat('!Y-m', $targetMonth)
+            ->startOfMonth()
+            ->format('Y-m-d');
     }
 }

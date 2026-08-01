@@ -10,14 +10,12 @@ return new class extends Migration
     {
         Schema::create('fixed_expenses', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('category_id')->constrained()->restrictOnDelete();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('category_id')->constrained()->onDelete('cascade');
             $table->unsignedInteger('amount');
             $table->string('memo');
             $table->boolean('is_enabled')->default(true);
             $table->timestamps();
-
-            $table->index(['user_id', 'is_enabled']);
         });
     }
 
