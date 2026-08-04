@@ -137,7 +137,7 @@ API側の全テストを実行：
 ./vendor/bin/sail artisan test tests/Feature/AssetBalanceApiTest.php
 ```
 
-認証APIのテストケースだけを実行：
+認証・パスワード変更APIのテストケースだけを実行：
 
 ```bash
 ./vendor/bin/sail artisan test tests/Feature/AuthApiTest.php

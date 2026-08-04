@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class AuthApiTest extends TestCase
@@ -164,5 +165,132 @@ class AuthApiTest extends TestCase
         $this->getJson('/api/user', [
             'Authorization' => "Bearer {$otherUserToken}",
         ])->assertOk()->assertJsonPath('id', $otherUser->id);
+    }
+
+    public function test_unauthenticated_user_cannot_change_password(): void
+    {
+        $this->putJson('/api/user/password', [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Unauthenticated');
+    }
+
+    public function test_user_can_change_password_and_revoke_all_of_their_tokens(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $currentToken = $user->createToken('current')->plainTextToken;
+        $user->createToken('remaining');
+        $otherUser->createToken('other-user');
+
+        $this->putJson('/api/user/password', [
+            'current_password' => 'password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ], [
+            'Authorization' => "Bearer {$currentToken}",
+        ])
+            ->assertOk()
+            ->assertJsonPath(
+                'message',
+                'パスワードを変更しました。再度ログインしてください。'
+            );
+
+        $user->refresh();
+
+        $this->assertTrue(Hash::check('new-password', $user->password));
+        $this->assertFalse(Hash::check('password', $user->password));
+        $this->assertDatabaseMissing('personal_access_tokens', [
+            'tokenable_id' => $user->id,
+            'tokenable_type' => User::class,
+        ]);
+        $this->assertDatabaseHas('personal_access_tokens', [
+            'tokenable_id' => $otherUser->id,
+            'tokenable_type' => User::class,
+            'name' => 'other-user',
+        ]);
+    }
+
+    public function test_password_change_rejects_incorrect_current_password(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('current')->plainTextToken;
+
+        $this->putJson('/api/user/password', [
+            'current_password' => 'wrong-password',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ], [
+            'Authorization' => "Bearer {$token}",
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['current_password'])
+            ->assertJsonPath(
+                'errors.current_password.0',
+                '現在のパスワードが正しくありません。'
+            );
+
+        $user->refresh();
+
+        $this->assertTrue(Hash::check('password', $user->password));
+        $this->assertDatabaseHas('personal_access_tokens', [
+            'tokenable_id' => $user->id,
+            'tokenable_type' => User::class,
+            'name' => 'current',
+        ]);
+    }
+
+    public function test_password_change_returns_japanese_validation_errors(): void
+    {
+        $user = User::factory()->create();
+        $token = $user->createToken('current')->plainTextToken;
+
+        $this->putJson('/api/user/password', [], [
+            'Authorization' => "Bearer {$token}",
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['current_password', 'password'])
+            ->assertJsonPath(
+                'errors.current_password.0',
+                '現在のパスワードを入力してください。'
+            )
+            ->assertJsonPath(
+                'errors.password.0',
+                '新しいパスワードを入力してください。'
+            );
+
+        $this->putJson('/api/user/password', [
+            'current_password' => 'password',
+            'password' => 'short',
+            'password_confirmation' => 'different',
+        ], [
+            'Authorization' => "Bearer {$token}",
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['password'])
+            ->assertJsonPath(
+                'errors.password.0',
+                '新しいパスワードは8文字以上で入力してください。'
+            )
+            ->assertJsonPath(
+                'errors.password.1',
+                '新しいパスワード（確認）が一致しません。'
+            );
+
+        $this->putJson('/api/user/password', [
+            'current_password' => 'password',
+            'password' => 'password',
+            'password_confirmation' => 'password',
+        ], [
+            'Authorization' => "Bearer {$token}",
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'errors.password.0',
+                '現在のパスワードとは異なるパスワードを入力してください。'
+            );
     }
 }
