@@ -46,14 +46,14 @@ class AuthApiTest extends TestCase
             'password' => 'password',
         ])
             ->assertUnauthorized()
-            ->assertJsonPath('message', 'Unauthorized');
+            ->assertJsonPath('message', 'メールアドレスまたはパスワードが正しくありません。');
 
         $this->postJson('/api/login', [
             'email' => $user->email,
             'password' => 'wrong-password',
         ])
             ->assertUnauthorized()
-            ->assertJsonPath('message', 'Unauthorized');
+            ->assertJsonPath('message', 'メールアドレスまたはパスワードが正しくありません。');
 
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
