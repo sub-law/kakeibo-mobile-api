@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\IncomeController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ExpenseController;
@@ -28,6 +29,9 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ログアウト
     Route::post('/logout', LogoutController::class);
+
+    // パスワード変更
+    Route::put('/user/password', [PasswordController::class, 'update']);
 
     // 入金機能
     Route::prefix('incomes')->group(function () {

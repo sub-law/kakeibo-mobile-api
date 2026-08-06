@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\Auth\LoginRequest;
 
@@ -15,9 +16,12 @@ class LoginController extends Controller
 
         // 認証
         if (!Auth::attempt($credentials)) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+            return response()->json([
+                'message' => 'メールアドレスまたはパスワードが正しくありません。',
+            ], 401);
         }
 
+        /** @var User $user */
         $user = Auth::user();
 
         // 既存トークン削除
