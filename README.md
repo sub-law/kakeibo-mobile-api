@@ -1,5 +1,7 @@
 # 家計簿アプリAPI側
 
+Laravel SanctumのBearer Token認証を使用し、入出金、月次資産残高、年次集計、予算アラート、固定費をユーザー単位で管理するAPIです。
+
 ## プロジェクト構成
 
 この家計簿アプリは、フロントエンドとAPIを別々のGitHubリポジトリで管理しています。
@@ -9,11 +11,11 @@
 
 ローカルでは、次の構成で配置することを推奨します。
 
-````text
+```text
 kakeibo-mobile/
 ├── kakeibo-mobile-front/
 └── kakeibo-mobile-api/
-````
+```
 
 ## 🚀 セットアップ手順
 
@@ -22,7 +24,7 @@ kakeibo-mobile/
 ```bash
 git clone <リポジトリURL> <フォルダ名>
 cd <フォルダ名>
-````
+```
 
 ### 2. `.env` を作成
 
@@ -173,10 +175,14 @@ API側の全テストを実行：
 ./vendor/bin/sail artisan test tests/Feature/ProcessFixedExpensesTest.php
 ```
 
+2026年8月4日時点のテスト結果は、業務APIテスト68件、Laravel雛形テストを含む全70件・501アサーション・失敗0件です。
+
 ## 📦 動作環境
 
 - Laravel Framework **13.5.0**
-- PHP **8.5**
+- PHP **8.4.8**
+- Laravel Sanctum **4.3.1**
+- PHPUnit **12.5.23**
 - Laravel Sail（Docker ベース）
 
 ---
@@ -190,3 +196,7 @@ API側の全テストを実行：
 ## ER図
 
 現在のマイグレーションを基準にしたMermaid形式のER図は、[docs/er-diagram.md](docs/er-diagram.md)を参照してください。
+
+## API仕様・テストレポート
+
+現行の32エンドポイント、対象テーブル、APIテストケースと実行結果は、[docs/api-requirements-and-test-report.md](docs/api-requirements-and-test-report.md)を参照してください。
