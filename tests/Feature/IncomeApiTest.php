@@ -93,6 +93,18 @@ class IncomeApiTest extends TestCase
             ->assertJsonPath('1.id', $laterIncome->id);
     }
 
+    public function test_income_list_rejects_invalid_year_and_month_filters(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/incomes?year=invalid&month=13')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['year', 'month'])
+            ->assertJsonPath('errors.year.0', '年は数値で入力してください。')
+            ->assertJsonPath('errors.month.0', '月は1〜12の範囲で入力してください。');
+    }
+
     public function test_user_can_view_their_income(): void
     {
         $user = User::factory()->create();
