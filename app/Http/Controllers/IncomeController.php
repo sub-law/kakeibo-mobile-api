@@ -2,19 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Income;
+use App\Http\Requests\ListMonthlyDataRequest;
 use App\Http\Requests\StoreIncomeRequest;
 use App\Http\Requests\UpdateIncomeRequest;
+use App\Models\Income;
+use Illuminate\Http\Request;
 
 class IncomeController extends Controller
 {
-    public function index(Request $request)
+    public function index(ListMonthlyDataRequest $request)
     {
+        $validated = $request->validated();
         $user = $request->user();
-
-        $year = $request->query('year', now()->year);
-        $month = $request->query('month', now()->month);
+        $year = $validated['year'] ?? now()->year;
+        $month = $validated['month'] ?? now()->month;
 
         $incomes = $user->incomes()
             ->whereYear('date', $year)

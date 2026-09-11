@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AssetBalance;
-use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\BulkAssetBalanceRequest;
-use App\Http\Requests\ListAssetBalanceRequest;
+use App\Http\Requests\ListMonthlyDataRequest;
+use App\Models\AssetBalance;
+
 class AssetBalanceController extends Controller
 {
     /**
@@ -14,9 +14,10 @@ class AssetBalanceController extends Controller
      */
     public function bulk(BulkAssetBalanceRequest $request)
     {
-        $userId = Auth::id();
-        $date = $request->date;
-        $balances = $request->balances;
+        $validated = $request->validated();
+        $userId = $request->user()->id;
+        $date = $validated['date'];
+        $balances = $validated['balances'];
 
         $results = [];
 
@@ -48,11 +49,12 @@ class AssetBalanceController extends Controller
      * 月次残高一覧
      * GET /api/asset-balances?year=2026&month=7
      */
-    public function index(ListAssetBalanceRequest $request)
+    public function index(ListMonthlyDataRequest $request)
     {
-        $userId = Auth::id();
-        $year = $request->input('year', now()->year);
-        $month = $request->input('month', now()->month);
+        $validated = $request->validated();
+        $userId = $request->user()->id;
+        $year = $validated['year'] ?? now()->year;
+        $month = $validated['month'] ?? now()->month;
 
         $balances = AssetBalance::with('account')
             ->where('user_id', $userId)
@@ -65,5 +67,4 @@ class AssetBalanceController extends Controller
             'data' => $balances,
         ], 200);
     }
-
 }

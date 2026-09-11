@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Account;
 use App\Models\AssetBalance;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,13 @@ use Tests\TestCase;
 class AssetBalanceApiTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+
+        parent::tearDown();
+    }
 
     public function test_unauthenticated_user_cannot_access_asset_balance_endpoints(): void
     {
@@ -159,6 +167,36 @@ class AssetBalanceApiTest extends TestCase
         ]);
     }
 
+    public function test_bulk_registration_rejects_non_month_start_date_without_changing_existing_balance(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->create();
+
+        AssetBalance::factory()->for($user)->for($account)->create([
+            'date' => '2026-07-01',
+            'amount' => 100000,
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/asset-balances/bulk', [
+                'date' => '2026-07-15',
+                'balances' => [
+                    ['account_id' => $account->id, 'amount' => 150000],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['date'])
+            ->assertJsonPath('errors.date.0', '月次残高の日付は月初で指定してください。');
+
+        $this->assertDatabaseCount('asset_balances', 1);
+        $this->assertDatabaseHas('asset_balances', [
+            'user_id' => $user->id,
+            'account_id' => $account->id,
+            'date' => '2026-07-01',
+            'amount' => 100000,
+        ]);
+    }
+
     public function test_bulk_registration_treats_zero_null_and_missing_amount_as_zero(): void
     {
         $user = User::factory()->create();
@@ -228,6 +266,49 @@ class AssetBalanceApiTest extends TestCase
         $this->assertSame('金額は0以上で入力してください。', $errors['balances.2.amount'][0]);
     }
 
+    public function test_bulk_registration_rejects_duplicate_accounts(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/asset-balances/bulk', [
+                'date' => '2026-07-01',
+                'balances' => [
+                    ['account_id' => $account->id, 'amount' => 100000],
+                    ['account_id' => (string) $account->id, 'amount' => 150000],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['balances.1.account_id']);
+
+        $this->assertDatabaseCount('asset_balances', 0);
+    }
+
+    public function test_bulk_registration_rejects_amount_beyond_the_database_limit(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/asset-balances/bulk', [
+                'date' => '2026-07-01',
+                'balances' => [
+                    ['account_id' => $account->id, 'amount' => 2147483648],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['balances.0.amount']);
+
+        $errors = $response->json('errors');
+        $this->assertSame(
+            '金額は2,147,483,647円以下で入力してください。',
+            $errors['balances.0.amount'][0]
+        );
+
+        $this->assertDatabaseCount('asset_balances', 0);
+    }
+
     public function test_user_can_list_only_their_balances_for_the_requested_month_in_account_order(): void
     {
         $user = User::factory()->create();
@@ -270,6 +351,26 @@ class AssetBalanceApiTest extends TestCase
             ->assertExactJson(['data' => []]);
     }
 
+    public function test_asset_balance_list_uses_the_current_month_when_year_and_month_are_omitted(): void
+    {
+        Carbon::setTestNow('2026-07-15 12:00:00');
+
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->create();
+        $currentMonthBalance = AssetBalance::factory()->for($user)->for($account)->create([
+            'date' => '2026-07-01',
+        ]);
+        AssetBalance::factory()->for($user)->for($account)->create([
+            'date' => '2026-06-01',
+        ]);
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/asset-balances')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $currentMonthBalance->id);
+    }
+
     public function test_asset_balance_list_rejects_months_outside_one_to_twelve(): void
     {
         $user = User::factory()->create();
@@ -280,6 +381,25 @@ class AssetBalanceApiTest extends TestCase
                 ->assertUnprocessable()
                 ->assertJsonValidationErrors(['month'])
                 ->assertJsonPath('errors.month.0', '月は1〜12の範囲で入力してください。');
+        }
+    }
+
+    public function test_asset_balance_list_rejects_invalid_years(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/asset-balances?year=invalid&month=7')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['year'])
+            ->assertJsonPath('errors.year.0', '年は数値で入力してください。');
+
+        foreach ([1899, 2101] as $year) {
+            $this->actingAs($user, 'sanctum')
+                ->getJson("/api/asset-balances?year={$year}&month=7")
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['year'])
+                ->assertJsonPath('errors.year.0', '年は1900〜2100の範囲で入力してください。');
         }
     }
 }
