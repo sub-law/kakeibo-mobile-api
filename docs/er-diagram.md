@@ -1,24 +1,25 @@
 # ER図
 
-このER図は、`database/migrations` にあるマイグレーションを基準に作成しています。
+この文書は`database/migrations`を正として、業務・認証テーブルとLaravel管理テーブルを分けて表現しています。図はGitHub上で更新内容を確認しやすいMermaid形式です。
 
-## アプリケーション管理テーブル
+## 1. 業務・認証テーブル
 
 ```mermaid
 erDiagram
-    USERS ||--o{ INCOMES : "収入を登録する"
-    USERS ||--o{ EXPENSES : "支出を登録する"
-    USERS ||--o{ ASSET_BALANCES : "資産残高を登録する"
-    USERS ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートを設定する"
-    USERS ||--o{ FIXED_EXPENSES : "固定費を登録する"
-    USERS ||--o{ LOGIN_HISTORIES : "ログイン履歴を持つ"
-    CATEGORY_GROUPS ||--o{ CATEGORIES : "カテゴリをまとめる"
-    CATEGORIES ||--o{ EXPENSES : "支出に分類される"
-    CATEGORIES ||--o{ BUDGET_ALERT_SETTINGS : "予算アラートの対象になる"
-    CATEGORIES ||--o{ FIXED_EXPENSES : "固定費に分類される"
-    ACCOUNTS ||--o{ ASSET_BALANCES : "口座別に残高を持つ"
+    USERS ||--o{ INCOMES : "所有する"
+    USERS ||--o{ EXPENSES : "所有する"
+    USERS ||--o{ ACCOUNTS : "所有する"
+    USERS ||--o{ ASSET_BALANCES : "所有する"
+    USERS ||--o{ BUDGET_ALERT_SETTINGS : "設定する"
+    USERS ||--o{ FIXED_EXPENSES : "設定する"
+    USERS ||--o{ LOGIN_HISTORIES : "記録する"
+    CATEGORY_GROUPS ||--o{ CATEGORIES : "分類する"
+    CATEGORIES ||--o{ EXPENSES : "分類する"
+    CATEGORIES ||--o{ BUDGET_ALERT_SETTINGS : "監視対象になる"
+    CATEGORIES ||--o{ FIXED_EXPENSES : "分類する"
+    ACCOUNTS ||--o{ ASSET_BALANCES : "月次残高を持つ"
     BUDGET_ALERT_SETTINGS ||--o{ BUDGET_ALERT_READS : "既読状態を持つ"
-    FIXED_EXPENSES ||--o{ FIXED_EXPENSE_PROCESSES : "月ごとの出金履歴を持つ"
+    FIXED_EXPENSES ||--o{ FIXED_EXPENSE_PROCESSES : "月次処理される"
     EXPENSES o|--o| FIXED_EXPENSE_PROCESSES : "固定費から生成される"
 
     USERS {
@@ -30,15 +31,6 @@ erDiagram
         varchar remember_token "NULL可"
         timestamp created_at
         timestamp updated_at
-    }
-
-    LOGIN_HISTORIES {
-        bigint id PK
-        bigint user_id FK "複合INDEX構成列"
-        timestamp logged_in_at "複合INDEX構成列"
-        varchar ip_address "NULL可・最大45文字"
-        varchar user_agent "NULL可・最大255文字"
-        timestamp read_at "NULL可"
     }
 
     INCOMES {
@@ -79,6 +71,7 @@ erDiagram
 
     ACCOUNTS {
         bigint id PK
+        bigint user_id FK
         varchar name
         varchar type "bank / securities / cash"
         timestamp created_at
@@ -87,31 +80,31 @@ erDiagram
 
     ASSET_BALANCES {
         bigint id PK
-        bigint user_id FK "複合UK構成列"
-        bigint account_id FK "複合UK構成列"
+        bigint user_id FK "複合UK"
+        bigint account_id FK "複合UK"
         integer amount "NULL可"
-        date date "複合UK構成列・月初日"
+        date date "複合UK・月初日"
         timestamp created_at
         timestamp updated_at
     }
 
     BUDGET_ALERT_SETTINGS {
         bigint id PK
-        bigint user_id FK "複合UK構成列"
-        bigint category_id FK "複合UK構成列"
+        bigint user_id FK "複合UK"
+        bigint category_id FK "複合UK"
         unsigned_integer monthly_budget
-        unsigned_tinyint warning_threshold_percent "デフォルト70"
-        boolean is_enabled "デフォルトtrue"
+        unsigned_tinyint warning_threshold_percent "既定値70"
+        boolean is_enabled "既定値true"
         timestamp created_at
         timestamp updated_at
     }
 
     BUDGET_ALERT_READS {
         bigint id PK
-        bigint budget_alert_setting_id FK "複合UK構成列"
-        unsigned_smallint year "複合UK構成列"
-        unsigned_tinyint month "複合UK構成列"
-        varchar level "複合UK構成列"
+        bigint budget_alert_setting_id FK "複合UK"
+        unsigned_smallint year "複合UK"
+        unsigned_tinyint month "複合UK"
+        varchar level "複合UK・最大20文字"
         timestamp read_at
     }
 
@@ -120,38 +113,64 @@ erDiagram
         bigint user_id FK
         bigint category_id FK
         unsigned_integer amount
-        varchar memo "NOT NULL"
-        boolean is_enabled "デフォルトtrue"
+        varchar memo
+        boolean is_enabled "既定値true"
         timestamp created_at
         timestamp updated_at
     }
 
     FIXED_EXPENSE_PROCESSES {
         bigint id PK
-        bigint fixed_expense_id FK "複合UK構成列"
+        bigint fixed_expense_id FK "複合UK"
         bigint expense_id FK "NULL可・UK"
-        date target_month "複合UK構成列"
+        date target_month "複合UK"
         timestamp created_at
         timestamp updated_at
     }
+
+    LOGIN_HISTORIES {
+        bigint id PK
+        bigint user_id FK "複合INDEX"
+        timestamp logged_in_at "複合INDEX"
+        varchar ip_address "NULL可・最大45文字"
+        varchar user_agent "NULL可・最大255文字"
+        timestamp read_at "NULL可"
+    }
 ```
 
-### 制約
+## 2. 主な制約
 
-- `incomes.user_id`、`expenses.user_id`、`expenses.category_id`、`categories.category_group_id`、`asset_balances.user_id`、`asset_balances.account_id`、`budget_alert_settings.user_id`、`budget_alert_settings.category_id`、`budget_alert_reads.budget_alert_setting_id`、`fixed_expenses.user_id`、`fixed_expenses.category_id`、`fixed_expense_processes.fixed_expense_id`、`login_histories.user_id` は、参照先の削除時に連動して削除されます。
-- `asset_balances` は、`user_id`、`account_id`、`date` の組み合わせで一意です。
-- `budget_alert_settings` は、`user_id`、`category_id` の組み合わせで一意です。
-- `budget_alert_reads` は、`budget_alert_setting_id`、`year`、`month`、`level` の組み合わせで一意です。
-- `fixed_expense_processes` は、`fixed_expense_id`、`target_month` の組み合わせで一意です。また、`expense_id` も一意です。
-- `fixed_expense_processes.expense_id` はNULLを許可し、参照する出金が削除された場合はNULLになります。これにより、出金削除後も固定費の処理済み履歴が残ります。
-- `login_histories` は、`user_id`、`logged_in_at` の組み合わせにインデックスがあります。既読操作では履歴を削除せず、`read_at` に既読日時を記録します。
-- `accounts.type` の値は、マイグレーションのコメント上では `bank`、`securities`、`cash` を想定しています。DB上の列型は文字列で、値を限定する制約はありません。
+| テーブル | 制約 | 目的 |
+|---|---|---|
+| `users` | `email` UNIQUE | メールアドレスの重複防止 |
+| `asset_balances` | `user_id`, `account_id`, `date` UNIQUE | 同一口座・同一月の残高を1件に限定 |
+| `budget_alert_settings` | `user_id`, `category_id` UNIQUE | ユーザーごとに同一カテゴリの設定を1件に限定 |
+| `budget_alert_reads` | `budget_alert_setting_id`, `year`, `month`, `level` UNIQUE | 月・警告レベル単位の既読状態を1件に限定 |
+| `fixed_expense_processes` | `fixed_expense_id`, `target_month` UNIQUE | 同じ固定費の月次重複処理を防止 |
+| `fixed_expense_processes` | `expense_id` UNIQUE・NULL可 | 1件の支出と複数処理履歴の紐付けを防止 |
+| `login_histories` | `user_id`, `logged_in_at` INDEX | ユーザーの直近ログイン取得を補助 |
 
-## Laravelフレームワーク管理テーブル
+### 外部キー削除時の動作
+
+- `users`を削除すると、関連する入金、支出、口座、資産残高、予算設定、固定費、ログイン履歴を連動して削除します。
+- `category_groups`を削除するとカテゴリを、カテゴリを削除すると関連する支出、予算設定、固定費を連動して削除します。
+- `accounts`を削除すると関連する資産残高を連動して削除します。
+- `budget_alert_settings`を削除すると関連する既読状態を連動して削除します。
+- `fixed_expenses`を削除すると関連する月次処理履歴を連動して削除します。
+- 固定費から生成した`expenses`を削除した場合、処理履歴の`expense_id`だけを`NULL`にします。処理済み状態は保持されます。
+
+### アプリケーション側の制約
+
+- 口座、資産残高、入出金、予算設定、固定費、ログイン履歴は認証ユーザーの関連から操作します。
+- `asset_balances.date`はAPIで`YYYY-MM-01`に限定します。DBカラム自体は`DATE`型です。
+- `accounts.type`は`bank`、`securities`、`cash`を使用します。DBカラム自体は文字列で、列制約による値の限定はありません。
+
+## 3. Laravel管理テーブル
 
 ```mermaid
 erDiagram
-    USERS o|--o{ SESSIONS : "user_idによる論理参照"
+    USERS o|--o{ SESSIONS : "論理参照"
+    USERS ||--o{ PERSONAL_ACCESS_TOKENS : "ポリモーフィック関連"
 
     PASSWORD_RESET_TOKENS {
         varchar email PK
@@ -162,7 +181,7 @@ erDiagram
     SESSIONS {
         varchar id PK
         bigint user_id "NULL可・INDEX"
-        varchar ip_address "NULL可"
+        varchar ip_address "NULL可・最大45文字"
         text user_agent "NULL可"
         longtext payload
         integer last_activity "INDEX"
@@ -184,10 +203,10 @@ erDiagram
         bigint id PK
         varchar queue "INDEX"
         longtext payload
-        tinyint attempts
-        integer reserved_at "NULL可"
-        integer available_at
-        integer created_at
+        unsigned_tinyint attempts
+        unsigned_integer reserved_at "NULL可"
+        unsigned_integer available_at
+        unsigned_integer created_at
     }
 
     JOB_BATCHES {
@@ -215,10 +234,10 @@ erDiagram
 
     PERSONAL_ACCESS_TOKENS {
         bigint id PK
-        varchar tokenable_type "複合INDEX構成列"
-        bigint tokenable_id "複合INDEX構成列"
+        varchar tokenable_type "複合INDEX"
+        bigint tokenable_id "複合INDEX"
         text name
-        varchar token UK
+        varchar token UK "ハッシュ値・64文字"
         text abilities "NULL可"
         timestamp last_used_at "NULL可"
         timestamp expires_at "NULL可・INDEX"
@@ -227,8 +246,4 @@ erDiagram
     }
 ```
 
-### 補足
-
-- `sessions.user_id` にはインデックスがありますが、マイグレーション上の外部キー制約はありません。
-- `password_reset_tokens.email` と `users.email` の間にも外部キー制約はありません。
-- `personal_access_tokens` は `tokenable_type` と `tokenable_id` によるポリモーフィック関連のため、特定のテーブルへの外部キー制約はありません。
+`sessions.user_id`、`password_reset_tokens.email`には外部キー制約がありません。`personal_access_tokens`もポリモーフィック関連のため`users`への外部キー制約を持ちません。
