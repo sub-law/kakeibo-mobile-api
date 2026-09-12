@@ -2,20 +2,21 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Expense;
-use Illuminate\Http\Request;
+use App\Http\Requests\ListMonthlyDataRequest;
 use App\Http\Requests\StoreExpenseRequest;
 use App\Http\Requests\UpdateExpenseRequest;
+use App\Models\Expense;
+use Illuminate\Http\Request;
 
 class ExpenseController extends Controller
 {
     // 一覧
-    public function index(Request $request)
+    public function index(ListMonthlyDataRequest $request)
     {
+        $validated = $request->validated();
         $user = $request->user();
-
-        $year = $request->query('year', now()->year);
-        $month = $request->query('month', now()->month);
+        $year = $validated['year'] ?? now()->year;
+        $month = $validated['month'] ?? now()->month;
 
         $expenses = $user->expenses()
             ->whereYear('date', $year)

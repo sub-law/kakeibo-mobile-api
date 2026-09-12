@@ -103,6 +103,18 @@ class ExpenseApiTest extends TestCase
             ->assertJsonPath('0.category.group.id', $category->category_group_id);
     }
 
+    public function test_expense_list_rejects_invalid_year_and_month_filters(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/expenses?year=2101&month=0')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['year', 'month'])
+            ->assertJsonPath('errors.year.0', '年は1900〜2100の範囲で入力してください。')
+            ->assertJsonPath('errors.month.0', '月は1〜12の範囲で入力してください。');
+    }
+
     public function test_user_can_view_their_expense_with_its_category_and_group(): void
     {
         $user = User::factory()->create();
