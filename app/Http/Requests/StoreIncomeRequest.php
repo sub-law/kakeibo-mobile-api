@@ -24,8 +24,8 @@ class StoreIncomeRequest extends FormRequest
     {
         return [
             'date' => ['required', 'date'],
-            'amount' => ['required', 'integer', 'min:1'],
-            'memo' => ['nullable', 'string'],
+            'amount' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'memo' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -37,6 +37,9 @@ class StoreIncomeRequest extends FormRequest
             'amount.required' => '金額を入力してください。',
             'amount.integer' => '金額は整数で入力してください。',
             'amount.min' => '金額は1円以上で入力してください。',
+            'amount.max' => '金額は2,147,483,647円以下で入力してください。',
+            'memo.string' => 'メモは文字列で入力してください。',
+            'memo.max' => 'メモは255文字以内で入力してください。',
         ];
     }
 }

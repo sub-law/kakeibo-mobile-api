@@ -75,6 +75,74 @@ class IncomeApiTest extends TestCase
             ->assertJsonPath('errors.amount.0', '金額は1円以上で入力してください。');
     }
 
+    public function test_income_accepts_database_boundary_values_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $createMemo = str_repeat('あ', 255);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/incomes', [
+                'date' => '2026-07-19',
+                'amount' => 2147483647,
+                'memo' => $createMemo,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $createMemo);
+
+        $incomeId = $response->json('id');
+        $updateMemo = str_repeat('い', 255);
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/incomes/{$incomeId}", [
+                'date' => '2026-07-20',
+                'amount' => 2147483647,
+                'memo' => $updateMemo,
+            ])
+            ->assertOk()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $updateMemo);
+
+        $this->assertDatabaseHas('incomes', [
+            'id' => $incomeId,
+            'amount' => 2147483647,
+            'memo' => $updateMemo,
+        ]);
+    }
+
+    public function test_income_rejects_values_beyond_database_boundaries_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $income = Income::factory()->for($user)->create([
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+        $invalidPayload = [
+            'date' => '2026-07-20',
+            'amount' => 2147483648,
+            'memo' => str_repeat('あ', 256),
+        ];
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/incomes', $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo'])
+            ->assertJsonPath('errors.amount.0', '金額は2,147,483,647円以下で入力してください。')
+            ->assertJsonPath('errors.memo.0', 'メモは255文字以内で入力してください。');
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/incomes/{$income->id}", $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo']);
+
+        $this->assertDatabaseCount('incomes', 1);
+        $this->assertDatabaseHas('incomes', [
+            'id' => $income->id,
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+    }
+
     public function test_user_can_list_only_their_incomes_for_the_requested_month_in_date_order(): void
     {
         $user = User::factory()->create();
