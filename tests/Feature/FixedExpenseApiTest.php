@@ -102,6 +102,79 @@ class FixedExpenseApiTest extends TestCase
             ->assertJsonPath('errors.is_enabled.0', '固定費の有効・無効の形式が正しくありません。');
     }
 
+    public function test_fixed_expense_accepts_database_boundary_values_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->create();
+        $createMemo = str_repeat('あ', 255);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses', [
+                'category_id' => $category->id,
+                'amount' => 2147483647,
+                'memo' => $createMemo,
+                'is_enabled' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $createMemo);
+
+        $fixedExpenseId = $response->json('id');
+        $updateMemo = str_repeat('い', 255);
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/fixed-expenses/{$fixedExpenseId}", [
+                'category_id' => $category->id,
+                'amount' => 2147483647,
+                'memo' => $updateMemo,
+                'is_enabled' => false,
+            ])
+            ->assertOk()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $updateMemo);
+
+        $this->assertDatabaseHas('fixed_expenses', [
+            'id' => $fixedExpenseId,
+            'amount' => 2147483647,
+            'memo' => $updateMemo,
+        ]);
+    }
+
+    public function test_fixed_expense_rejects_values_beyond_database_boundaries_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->create();
+        $fixedExpense = FixedExpense::factory()->for($user)->for($category)->create([
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+        $invalidPayload = [
+            'category_id' => $category->id,
+            'amount' => 2147483648,
+            'memo' => str_repeat('あ', 256),
+            'is_enabled' => true,
+        ];
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/fixed-expenses', $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo'])
+            ->assertJsonPath('errors.amount.0', '月額料金は2,147,483,647円以下で入力してください。')
+            ->assertJsonPath('errors.memo.0', '用途は255文字以内で入力してください。');
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/fixed-expenses/{$fixedExpense->id}", $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo']);
+
+        $this->assertDatabaseCount('fixed_expenses', 1);
+        $this->assertDatabaseHas('fixed_expenses', [
+            'id' => $fixedExpense->id,
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+    }
+
     public function test_user_cannot_access_another_users_fixed_expense(): void
     {
         $user = User::factory()->create();
