@@ -82,6 +82,79 @@ class ExpenseApiTest extends TestCase
             ->assertJsonPath('errors.category_id.0', '選択したカテゴリが存在しません。');
     }
 
+    public function test_expense_accepts_database_boundary_values_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->create();
+        $createMemo = str_repeat('あ', 255);
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/expenses', [
+                'date' => '2026-07-19',
+                'amount' => 2147483647,
+                'memo' => $createMemo,
+                'category_id' => $category->id,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $createMemo);
+
+        $expenseId = $response->json('id');
+        $updateMemo = str_repeat('い', 255);
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/expenses/{$expenseId}", [
+                'date' => '2026-07-20',
+                'amount' => 2147483647,
+                'memo' => $updateMemo,
+                'category_id' => $category->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('amount', 2147483647)
+            ->assertJsonPath('memo', $updateMemo);
+
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expenseId,
+            'amount' => 2147483647,
+            'memo' => $updateMemo,
+        ]);
+    }
+
+    public function test_expense_rejects_values_beyond_database_boundaries_on_create_and_update(): void
+    {
+        $user = User::factory()->create();
+        $category = Category::factory()->create();
+        $expense = Expense::factory()->for($user)->for($category)->create([
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+        $invalidPayload = [
+            'date' => '2026-07-20',
+            'amount' => 2147483648,
+            'memo' => str_repeat('あ', 256),
+            'category_id' => $category->id,
+        ];
+
+        $this->actingAs($user, 'sanctum')
+            ->postJson('/api/expenses', $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo'])
+            ->assertJsonPath('errors.amount.0', '金額は2,147,483,647円以下で入力してください。')
+            ->assertJsonPath('errors.memo.0', 'メモは255文字以内で入力してください。');
+
+        $this->actingAs($user, 'sanctum')
+            ->putJson("/api/expenses/{$expense->id}", $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['amount', 'memo']);
+
+        $this->assertDatabaseCount('expenses', 1);
+        $this->assertDatabaseHas('expenses', [
+            'id' => $expense->id,
+            'amount' => 1000,
+            'memo' => '変更前',
+        ]);
+    }
+
     public function test_user_can_list_only_their_expenses_for_the_requested_month_in_date_order(): void
     {
         $user = User::factory()->create();

@@ -180,17 +180,25 @@ CIはPHP 8.4とSQLiteインメモリDBを使用し、`composer test`を実行し
 
 支出APIのテストケースだけを実行：
 
+- 登録・更新時に金額2,147,483,647円とメモ255文字を受け付ける
+- 金額・メモがDBの上限を超える場合は登録・更新を拒否する
+
 ```bash
 ./vendor/bin/sail artisan test tests/Feature/ExpenseApiTest.php
 ```
 
 入金APIのテストケースだけを実行：
 
+- 登録・更新時に金額2,147,483,647円とメモ255文字を受け付ける
+- 金額・メモがDBの上限を超える場合は登録・更新を拒否する
+
 ```bash
 ./vendor/bin/sail artisan test tests/Feature/IncomeApiTest.php
 ```
 
 口座・資産残高APIのテストケースだけを実行：
+
+- 資産残高がDBの金額上限を超える場合は一括登録を拒否する
 
 ```bash
 ./vendor/bin/sail artisan test tests/Feature/AssetBalanceApiTest.php
@@ -234,6 +242,9 @@ CIはPHP 8.4とSQLiteインメモリDBを使用し、`composer test`を実行し
 ```
 
 固定費設定APIのテストケースだけを実行：
+
+- 登録・更新時に金額2,147,483,647円と用途255文字を受け付ける
+- 金額・用途がDBの上限を超える場合は登録・更新を拒否する
 
 ```bash
 ./vendor/bin/sail artisan test tests/Feature/FixedExpenseApiTest.php
@@ -317,12 +328,12 @@ exit
 
 ## 📦 動作環境
 
-- Laravel Framework **13.5.0**
-- Laravel Sanctum **4.3.1**
+- Laravel Framework **13.31.0**
+- Laravel Sanctum **4.3.3**
 - PHP **8.5**（ローカルのLaravel Sailランタイム）
 - PHP **8.4**（GitHub Actions）
 - PHP要件 **^8.4**
-- Laravel Sail **1.57.0**
+- Laravel Sail **1.67.0**
 - MySQL **8.4**（ローカル開発DB）
 - SQLite インメモリDB（自動テスト）
 
