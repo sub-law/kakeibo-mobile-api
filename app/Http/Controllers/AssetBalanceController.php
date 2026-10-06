@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\BulkAssetBalanceRequest;
 use App\Http\Requests\ListMonthlyDataRequest;
 use App\Models\AssetBalance;
+use Illuminate\Support\Facades\DB;
 
 class AssetBalanceController extends Controller
 {
@@ -19,25 +20,29 @@ class AssetBalanceController extends Controller
         $date = $validated['date'];
         $balances = $validated['balances'];
 
-        $results = [];
+        $results = DB::transaction(function () use ($balances, $userId, $date) {
+            $results = [];
 
-        foreach ($balances as $balance) {
-            $accountId = $balance['account_id'];
-            $amount = $balance['amount'] ?? 0;
+            foreach ($balances as $balance) {
+                $accountId = $balance['account_id'];
+                $amount = $balance['amount'] ?? 0;
 
-            $record = AssetBalance::updateOrCreate(
-                [
-                    'user_id' => $userId,
-                    'account_id' => $accountId,
-                    'date' => $date,
-                ],
-                [
-                    'amount' => $amount,
-                ]
-            );
+                $record = AssetBalance::updateOrCreate(
+                    [
+                        'user_id' => $userId,
+                        'account_id' => $accountId,
+                        'date' => $date,
+                    ],
+                    [
+                        'amount' => $amount,
+                    ]
+                );
 
-            $results[] = $record;
-        }
+                $results[] = $record;
+            }
+
+            return $results;
+        });
 
         return response()->json([
             'message' => '月次残高を登録しました（上書き含む）',

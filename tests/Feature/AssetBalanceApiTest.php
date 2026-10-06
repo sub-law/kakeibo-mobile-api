@@ -102,6 +102,51 @@ class AssetBalanceApiTest extends TestCase
         ]);
     }
 
+    public function test_bulk_registration_rolls_back_all_changes_when_an_update_fails(): void
+    {
+        $user = User::factory()->create();
+        $accounts = Account::factory()->for($user)->count(2)->create();
+        $existingBalance = AssetBalance::factory()->for($user)->for($accounts[0])->create([
+            'date' => '2026-07-01',
+            'amount' => 50000,
+        ]);
+
+        AssetBalance::creating(function (): void {
+            throw new \RuntimeException('Test failure during bulk registration.');
+        });
+
+        $this->withoutExceptionHandling();
+
+        try {
+            $this->actingAs($user, 'sanctum')
+                ->postJson('/api/asset-balances/bulk', [
+                    'date' => '2026-07-01',
+                    'balances' => [
+                        ['account_id' => $accounts[0]->id, 'amount' => 100000],
+                        ['account_id' => $accounts[1]->id, 'amount' => 250000],
+                    ],
+                ]);
+
+            $this->fail('The second balance update did not fail as expected.');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame(
+                'Test failure during bulk registration.',
+                $exception->getMessage()
+            );
+        }
+
+        $this->assertDatabaseCount('asset_balances', 1);
+        $this->assertDatabaseHas('asset_balances', [
+            'id' => $existingBalance->id,
+            'amount' => 50000,
+        ]);
+        $this->assertDatabaseMissing('asset_balances', [
+            'user_id' => $user->id,
+            'account_id' => $accounts[1]->id,
+            'date' => '2026-07-01',
+        ]);
+    }
+
     public function test_user_cannot_register_balance_for_another_users_account(): void
     {
         $user = User::factory()->create();
@@ -264,6 +309,28 @@ class AssetBalanceApiTest extends TestCase
         $this->assertSame('指定された口座が存在しません。', $errors['balances.1.account_id'][0]);
         $this->assertSame('金額は整数で入力してください。', $errors['balances.1.amount'][0]);
         $this->assertSame('金額は0以上で入力してください。', $errors['balances.2.amount'][0]);
+    }
+
+    public function test_bulk_registration_rejects_decimal_amount_without_saving_it(): void
+    {
+        $user = User::factory()->create();
+        $account = Account::factory()->for($user)->create();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->postJson('/api/asset-balances/bulk', [
+                'date' => '2026-07-01',
+                'balances' => [
+                    ['account_id' => $account->id, 'amount' => 1234.5],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['balances.0.amount']);
+
+        $this->assertSame(
+            '金額は整数で入力してください。',
+            $response->json('errors')['balances.0.amount'][0]
+        );
+        $this->assertDatabaseCount('asset_balances', 0);
     }
 
     public function test_bulk_registration_rejects_duplicate_accounts(): void
